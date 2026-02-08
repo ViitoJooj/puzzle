@@ -1,0 +1,60 @@
+package helpers
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+
+	"golang.org/x/crypto/argon2"
+)
+
+func HashPassword(password string) (string, string, error) {
+	var (
+		memory    uint32 = 64 * 1024
+		time      uint32 = 3
+		threads   uint8  = 2
+		keyLength uint32 = 32
+	)
+
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", "", err
+	}
+
+	hash := argon2.IDKey(
+		[]byte(password),
+		salt,
+		time,
+		memory,
+		threads,
+		keyLength,
+	)
+
+	return base64.RawStdEncoding.EncodeToString(hash),
+		base64.RawStdEncoding.EncodeToString(salt),
+		nil
+}
+
+func VerifyPassword(inputPassword string, storedHash string, storedSalt string) bool {
+
+	hash, err := base64.RawStdEncoding.DecodeString(storedHash)
+	if err != nil {
+		return false
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(storedSalt)
+	if err != nil {
+		return false
+	}
+
+	newHash := argon2.IDKey(
+		[]byte(inputPassword),
+		salt,
+		3,
+		64*1024,
+		2,
+		uint32(len(hash)),
+	)
+
+	return subtle.ConstantTimeCompare(hash, newHash) == 1
+}

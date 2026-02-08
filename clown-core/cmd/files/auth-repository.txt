@@ -1,0 +1,40 @@
+package auth
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"<projectname>/internal/helpers"
+	postgres "<projectname>/internal/repository"
+)
+
+func ValidateLogin(email string, password string) (string, error) {
+	var (
+		userID string
+		hash   string
+		salt   string
+	)
+
+	err := postgres.DB.QueryRowContext(
+		context.Background(),
+		`
+		SELECT id, password_hash, password_salt
+		FROM users
+		WHERE email = $1
+		`,
+		email,
+	).Scan(&userID, &hash, &salt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", errors.New("user not found")
+		}
+		return "", err
+	}
+
+	if !helpers.VerifyPassword(password, hash, salt) { //USE "clown add hash"
+		return "", errors.New("invalid password")
+	}
+
+	return userID, nil
+}

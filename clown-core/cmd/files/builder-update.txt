@@ -1,0 +1,62 @@
+package builders
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+type UpdateBuilder struct {
+	BaseBuilder
+	table  string
+	fields map[string]interface{}
+}
+
+func NewUpdateBuilder(db *sql.DB) *UpdateBuilder {
+	return &UpdateBuilder{
+		BaseBuilder: BaseBuilder{db: db},
+		fields:      map[string]interface{}{},
+	}
+}
+
+func (u *UpdateBuilder) OnTable(table string) *UpdateBuilder {
+	u.table = table
+	return u
+}
+
+func (u *UpdateBuilder) Set(k string, v interface{}) *UpdateBuilder {
+	u.fields[k] = v
+	return u
+}
+
+func (u *UpdateBuilder) Where(cond string, args ...interface{}) *UpdateBuilder {
+	u.BaseBuilder.Where(cond, args...)
+	return u
+}
+
+func (u *UpdateBuilder) Build() (string, []interface{}) {
+	set := []string{}
+	args := []interface{}{}
+	i := 1
+
+	for k, v := range u.fields {
+		set = append(set, fmt.Sprintf("%s=$%d", k, i))
+		args = append(args, v)
+		i++
+	}
+
+	sql := fmt.Sprintf("UPDATE %s SET %s", u.table, strings.Join(set, ","))
+
+	if len(u.where) > 0 {
+		sql += " WHERE " + strings.Join(u.where, " AND ")
+		args = append(args, u.args...)
+	}
+
+	return sql, args
+}
+
+func (u *UpdateBuilder) Exec(ctx context.Context) (sql.Result, error) {
+	q, args := u.Build()
+	return u.db.ExecContext(ctx, q, args...)
+}

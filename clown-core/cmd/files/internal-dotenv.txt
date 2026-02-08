@@ -1,0 +1,43 @@
+package config
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/joho/godotenv"
+)
+
+var (
+	Pg_port      string
+	Pg_host      string
+	Pg_db        string
+	Pg_pswd      string
+	Pg_user      string
+	Pg_ssl       string
+	Pg_Uri       string
+	AccessToken  []byte
+	RefreshToken []byte
+)
+
+func Dotenv() {
+	var tempGet string
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	Pg_port = os.Getenv("POSTGRES_PORT")
+	Pg_db = os.Getenv("POSTGRES_DB")
+	Pg_pswd = os.Getenv("POSTGRES_PASSWORD")
+	Pg_host = os.Getenv("POSTGRES_HOST")
+	Pg_user = os.Getenv("POSTGRES_USER")
+	Pg_ssl = os.Getenv("POSTGRES_SSL")
+
+	tempGet = os.Getenv("AccessTokenJWT")
+	AccessToken = []byte(tempGet)
+	tempGet = os.Getenv("RefreshTokenJWT")
+	RefreshToken = []byte(tempGet)
+
+	Pg_Uri = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", Pg_user, Pg_pswd, Pg_host, Pg_port, Pg_db, Pg_ssl)
+}

@@ -1,0 +1,52 @@
+package postgres
+
+import (
+	"database/sql"
+	"log"
+	"time"
+
+	"<projectname>/internal/config"
+	"<projectname>/internal/repository/builders"
+
+	_ "github.com/lib/pq"
+)
+
+var DB *sql.DB
+
+type Postgres struct {
+	DB *sql.DB
+}
+
+func NewPostgres() *Postgres {
+	return &Postgres{DB: DB}
+}
+
+func (p *Postgres) Create(entity string) *builders.CreateBuilder {
+	return builders.NewCreateBuilder(p.DB, entity)
+}
+
+func (p *Postgres) Update() *builders.UpdateBuilder {
+	return builders.NewUpdateBuilder(p.DB)
+}
+
+func (p *Postgres) Delete() *builders.DeleteBuilder {
+	return builders.NewDeleteBuilder(p.DB)
+}
+
+func ConnectPostgres() {
+	var err error
+
+	DB, err = sql.Open("postgres", config.Pg_Uri)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := DB.Ping(); err != nil {
+		log.Println("Await connection...", err)
+		time.Sleep(5 * time.Second)
+		ConnectPostgres()
+		return
+	}
+
+	log.Println("Connected to Postgres!")
+}

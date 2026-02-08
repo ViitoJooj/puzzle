@@ -1,0 +1,54 @@
+package builders
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+type DeleteBuilder struct {
+	BaseBuilder
+	table   string
+	cascade bool
+}
+
+func NewDeleteBuilder(db *sql.DB) *DeleteBuilder {
+	return &DeleteBuilder{
+		BaseBuilder: BaseBuilder{db: db},
+	}
+}
+
+func (d *DeleteBuilder) OnTable(table string) *DeleteBuilder {
+	d.table = table
+	return d
+}
+
+func (d *DeleteBuilder) Where(cond string, args ...interface{}) *DeleteBuilder {
+	d.BaseBuilder.Where(cond, args...)
+	return d
+}
+
+func (d *DeleteBuilder) Cascade() *DeleteBuilder {
+	d.cascade = true
+	return d
+}
+
+func (d *DeleteBuilder) Build() (string, []interface{}) {
+	sql := fmt.Sprintf("DELETE FROM %s", d.table)
+
+	if len(d.where) > 0 {
+		sql += " WHERE " + strings.Join(d.where, " AND ")
+	}
+
+	if d.cascade {
+		sql += " CASCADE"
+	}
+
+	return sql, d.args
+}
+
+func (d *DeleteBuilder) Exec(ctx context.Context) (sql.Result, error) {
+	q, args := d.Build()
+	return d.db.ExecContext(ctx, q, args...)
+}

@@ -1,0 +1,59 @@
+package builders
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+type CreateBuilder struct {
+	BaseBuilder
+	table  string
+	fields map[string]interface{}
+}
+
+func NewCreateBuilder(db *sql.DB, _ string) *CreateBuilder {
+	return &CreateBuilder{
+		BaseBuilder: BaseBuilder{db: db},
+		fields:      map[string]interface{}{},
+	}
+}
+
+func (c *CreateBuilder) OnTable(table string) *CreateBuilder {
+	c.table = table
+	return c
+}
+
+func (c *CreateBuilder) Set(k string, v interface{}) *CreateBuilder {
+	c.fields[k] = v
+	return c
+}
+
+func (c *CreateBuilder) Build() (string, []interface{}) {
+	cols := []string{}
+	vals := []string{}
+	args := []interface{}{}
+
+	i := 1
+	for k, v := range c.fields {
+		cols = append(cols, k)
+		vals = append(vals, fmt.Sprintf("$%d", i))
+		args = append(args, v)
+		i++
+	}
+
+	sql := fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES (%s)",
+		c.table,
+		strings.Join(cols, ","),
+		strings.Join(vals, ","),
+	)
+
+	return sql, args
+}
+
+func (c *CreateBuilder) Exec(ctx context.Context) (sql.Result, error) {
+	q, args := c.Build()
+	return c.db.ExecContext(ctx, q, args...)
+}

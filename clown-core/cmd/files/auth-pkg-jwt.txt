@@ -1,0 +1,38 @@
+package pkg
+
+import (
+	"teste/internal/config"
+	"time"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var (
+	AccessSecret  = config.AccessToken
+	RefreshSecret = config.RefreshToken
+)
+
+func GenerateAccessToken(userID string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub": userID,
+		"exp": time.Now().Add(30 * time.Minute).Unix(),
+		"iat": time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(AccessSecret)
+}
+
+func GenerateRefreshToken(userID string) (string, time.Time, error) {
+	exp := time.Now().Add(30 * 24 * time.Hour)
+
+	claims := jwt.MapClaims{
+		"sub": userID,
+		"exp": exp.Unix(),
+		"iat": time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	t, err := token.SignedString(RefreshSecret)
+
+	return t, exp, err
+}

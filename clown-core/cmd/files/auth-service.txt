@@ -1,0 +1,270 @@
+package auth
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+
+	"<projectname>/internal/helpers"
+	postgres "<projectname>/internal/repository"
+	"<projectname>/pkg"
+)
+
+// Login request
+func Login(c *gin.Context) {
+	var body struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required,min=6,max=50"`
+	}
+
+	// Validate body
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, pkg.Response{
+			Success: false,
+			Message: "Invalid body",
+		})
+		return
+	}
+
+	// Verify data
+	userID, err := ValidateLogin(body.Email, body.Password)
+	if err != nil || userID == "" {
+		c.JSON(http.StatusUnauthorized, pkg.Response{
+			Success: false,
+			Message: "Invalid credentials",
+		})
+		return
+	}
+
+	accessToken, err := pkg.GenerateAccessToken(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to generate access token",
+		})
+		return
+	}
+
+	refreshToken, expiresAt, err := pkg.GenerateRefreshToken(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to generate refresh token",
+		})
+		return
+	}
+
+	pg := postgres.NewPostgres()
+
+	if _, err := pg.Create("").
+		OnTable("refresh_tokens").
+		Set("user_id", userID).
+		Set("token", refreshToken).
+		Set("expires_at", expiresAt).
+		Exec(c.Request.Context()); err != nil {
+
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to save refresh token",
+		})
+		return
+	}
+
+	// Access Token - 30 minutos
+	c.SetCookie(
+		"access_token",
+		accessToken,
+		1800, // 30 min
+		"/",
+		"",    // domain
+		true,  // secure (HTTPS)
+		false, // httpOnly
+	)
+
+	// Refresh Token
+	c.SetCookie(
+		"refresh_token",
+		refreshToken,
+		30*24*60*60, //30 days
+		"/",
+		"",
+		true,
+		true, //(httpOnly)
+	)
+
+	c.JSON(http.StatusOK, pkg.Response{
+		Success: true,
+		Message: "Login successful",
+	})
+}
+
+// Register service
+// this service register and make login for UX
+func Register(c *gin.Context) {
+	//Request
+	var body struct {
+		First_name string `json:"first_name" binding:"required,min=3,max=50"`
+		Last_name  string `json:"last_name" binding:"required,min=3,max=50"`
+		Email      string `json:"email" binding:"required,email"`
+		Password   string `json:"password" binding:"required,min=6,max=50"`
+	}
+
+	//Decode body
+	//Verify body
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, pkg.Response{
+			Success: false,
+			Message: "Invalid body",
+		})
+		return
+	}
+
+	hash, salt, err := helpers.HashPassword(body.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Invalid body",
+		})
+		return
+	}
+
+	pg := postgres.NewPostgres()
+
+	if _, err := pg.Create("").
+		OnTable("users").
+		Set("first_name", body.First_name).
+		Set("last_name", body.Last_name).
+		Set("email", body.Email).
+		Set("password_hash", hash).
+		Set("password_salt", salt).
+		Exec(c.Request.Context()); err != nil {
+
+		c.JSON(http.StatusBadRequest, pkg.Response{
+			Success: false,
+			Message: "Invalid body",
+		})
+		return
+	}
+
+	// make login
+	userID, err := ValidateLogin(body.Email, body.Password)
+	if err != nil || userID == "" {
+		c.JSON(http.StatusUnauthorized, pkg.Response{
+			Success: false,
+			Message: "Invalid credentials",
+		})
+		return
+	}
+
+	accessToken, err := pkg.GenerateAccessToken(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to generate access token",
+		})
+		return
+	}
+
+	refreshToken, expiresAt, err := pkg.GenerateRefreshToken(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to generate refresh token",
+		})
+		return
+	}
+
+	if _, err := pg.Create("").
+		OnTable("refresh_tokens").
+		Set("user_id", userID).
+		Set("token", refreshToken).
+		Set("expires_at", expiresAt).
+		Exec(c.Request.Context()); err != nil {
+
+		c.JSON(http.StatusInternalServerError, pkg.Response{
+			Success: false,
+			Message: "Failed to save refresh token",
+		})
+		return
+	}
+
+	// Access Token - 30 minutos
+	c.SetCookie(
+		"access_token",
+		accessToken,
+		1800, // 30 min
+		"/",
+		"",    // domain
+		true,  // secure (HTTPS)
+		false, // httpOnly
+	)
+
+	// Refresh Token
+	c.SetCookie(
+		"refresh_token",
+		refreshToken,
+		30*24*60*60, //30 days
+		"/",
+		"",
+		true,
+		true, //(httpOnly)
+	)
+
+	c.JSON(http.StatusCreated, pkg.Response{
+		Success: true,
+		Message: "User registered successfully",
+	})
+}
+
+func Refresh(c *gin.Context) {
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "Refresh token missing",
+		})
+		return
+	}
+
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(
+		refreshToken,
+		claims,
+		func(t *jwt.Token) (interface{}, error) {
+			return pkg.RefreshSecret, nil
+		},
+	)
+
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "Invalid refresh token",
+		})
+		return
+	}
+
+	userID := claims["sub"].(string)
+
+	// Validate
+	accessToken, err := pkg.GenerateAccessToken(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Failed to generate access token",
+		})
+		return
+	}
+
+	// new access token
+	c.SetCookie(
+		"access_token",
+		accessToken,
+		1800,
+		"/",
+		"",
+		true,
+		false,
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Token refreshed",
+	})
+}

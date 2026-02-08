@@ -1,0 +1,53 @@
+package middlewares
+
+import (
+	"net/http"
+	"teste/pkg"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+func Auth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		tokenString, err := c.Cookie("access_token")
+		if err != nil || tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "Unauthorized",
+			})
+			c.Abort()
+			return
+		}
+
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(
+			tokenString,
+			claims,
+			func(t *jwt.Token) (interface{}, error) {
+				return pkg.AccessSecret, nil
+			},
+		)
+
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "Invalid token",
+			})
+			c.Abort()
+			return
+		}
+
+		userID, ok := claims["sub"].(string)
+		if !ok || userID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "Invalid token payload",
+			})
+			c.Abort()
+			return
+		}
+		c.Set("userID", userID)
+		c.Next()
+	}
+}
